@@ -1,0 +1,80 @@
+server:
+  port: 8443
+  ssl:
+    enabled: true
+    key-store: classpath:keystore.p12
+    key-store-type: PKCS12
+
+spring:
+  application:
+    name: bofa-notification-service
+  datasource:
+    url: jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=oracle-rac-prod-1.bofa.internal)(PORT=1521))(ADDRESS=(PROTOCOL=TCP)(HOST=oracle-rac-prod-2.bofa.internal)(PORT=1521)))(CONNECT_DATA=(SERVICE_NAME=NOTIF_SVC)(FAILOVER_MODE=(TYPE=SELECT)(METHOD=BASIC)(RETRIES=3)(DELAY=5))))
+    username: ${ORACLE_USER:notif_svc}
+    password: ${ORACLE_PASSWORD}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 10
+      connection-timeout: 10000
+      idle-timeout: 300000
+  jpa:
+    database-platform: org.hibernate.dialect.Oracle12cDialect
+    show-sql: false
+
+ibm:
+  mq:
+    queue-manager: BOFA_PROD_QM01
+    channel: NOTIF.SVRCONN
+    conn-name: mqprod1.bofa.internal(1414),mqprod2.bofa.internal(1414)
+    user: ${MQ_USER:notif_svc}
+    password: ${MQ_PASSWORD}
+    queue:
+      notifications: BOFA.NOTIFICATIONS.QUEUE
+      dead-letter: BOFA.NOTIFICATIONS.DLQ
+      fraud-priority: BOFA.FRAUD.PRIORITY.QUEUE
+
+ldap:
+  url: ldaps://ldap-prod.bofa.internal:636
+  base-dn: dc=bofa,dc=com
+  manager-dn: cn=notif-svc,ou=ServiceAccounts,dc=bofa,dc=com
+  manager-password: ${LDAP_PASSWORD}
+
+notification:
+  balance:
+    cooldown-hours: 4
+  fraud:
+    max-delivery-sla-seconds: 30
+  channels:
+    sms:
+      enabled: true
+      provider: twilio
+    push:
+      enabled: true
+      apns-cert: ${APNS_CERT_PATH}
+    email:
+      enabled: true
+      smtp-host: smtp-relay.bofa.internal
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      datadog:
+        api-key: ${DD_API_KEY}
+        application-key: ${DD_APP_KEY}
+        enabled: true
+        step: 30s
+    tags:
+      service: notification-service
+      env: ${DEPLOY_ENV:production}
+      team: notification-squad
+
+logging:
+  level:
+    com.bofa.notifications: INFO
+    org.springframework.jms: WARN
+    com.ibm.mq: WARN

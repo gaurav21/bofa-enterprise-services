@@ -1,0 +1,118 @@
+{
+  "reportGeneratedAt": "2026-06-20T14:32:18Z",
+  "reportVersion": "1.0",
+  "tool": "JaCoCo + coverage.py (aggregated)",
+  "overallCoverage": {
+    "lineCoverage": 28.3,
+    "branchCoverage": 21.7,
+    "methodCoverage": 32.1,
+    "classCoverage": 45.2
+  },
+  "services": {
+    "notification-service": {
+      "lineCoverage": 31.5,
+      "branchCoverage": 24.8,
+      "methodCoverage": 35.2,
+      "classCoverage": 50.0,
+      "criticalPaths": {
+        "FraudNotificationService": {
+          "coverage": 38.2,
+          "risk": "HIGH",
+          "note": "SLA-critical fraud alerting path has minimal edge case coverage"
+        },
+        "MqMessageListener": {
+          "coverage": 22.1,
+          "risk": "HIGH",
+          "note": "Message routing and error handling largely untested"
+        },
+        "MessageOrderGuarantee": {
+          "coverage": 41.3,
+          "risk": "MEDIUM",
+          "note": "Gap detection and duplicate handling need more tests"
+        }
+      }
+    },
+    "transaction-processing": {
+      "lineCoverage": 15.2,
+      "branchCoverage": 8.9,
+      "methodCoverage": 19.4,
+      "classCoverage": 33.3,
+      "criticalPaths": {
+        "ComplianceChecker": {
+          "coverage": 6.3,
+          "risk": "CRITICAL",
+          "note": "OFAC screening, structuring detection, and CTR filing have almost no test coverage. OCC examination will audit this."
+        },
+        "ValidationEngine": {
+          "coverage": 12.8,
+          "risk": "CRITICAL",
+          "note": "Routing number validation, amount edge cases, and Unicode handling untested"
+        },
+        "PiiDetector": {
+          "coverage": 18.5,
+          "risk": "HIGH",
+          "note": "PII pattern matching for SSN, credit card, email formats not fully tested"
+        },
+        "PiiMasker": {
+          "coverage": 21.0,
+          "risk": "HIGH",
+          "note": "Masking output format and edge cases (null, empty, partial match) untested"
+        },
+        "TokenValidator": {
+          "coverage": 15.7,
+          "risk": "HIGH",
+          "note": "Token expiry, signature verification, and malformed token handling need tests"
+        }
+      }
+    },
+    "auth-service": {
+      "lineCoverage": 23.1,
+      "branchCoverage": 15.4,
+      "methodCoverage": 28.6,
+      "classCoverage": 40.0,
+      "criticalPaths": {
+        "LdapAuthConfig": {
+          "coverage": 0.0,
+          "risk": "HIGH",
+          "note": "Security configuration completely untested"
+        },
+        "TokenValidator": {
+          "coverage": 31.2,
+          "risk": "MEDIUM",
+          "note": "Basic happy path tested, edge cases missing"
+        }
+      }
+    },
+    "audit-service": {
+      "lineCoverage": 0.0,
+      "branchCoverage": 0.0,
+      "methodCoverage": 0.0,
+      "classCoverage": 0.0,
+      "criticalPaths": {
+        "audit_logger": {
+          "coverage": 0.0,
+          "risk": "CRITICAL",
+          "note": "ZERO tests. Immutable audit logging is compliance-critical for SOX 404."
+        },
+        "compliance_reporter": {
+          "coverage": 0.0,
+          "risk": "CRITICAL",
+          "note": "ZERO tests. Report generation for OCC/FinCEN completely untested."
+        },
+        "retention_policy": {
+          "coverage": 0.0,
+          "risk": "CRITICAL",
+          "note": "ZERO tests. Incorrect retention could cause regulatory violations."
+        }
+      }
+    }
+  },
+  "complianceCriticalSummary": {
+    "totalCompliancePaths": 14,
+    "pathsWithAdequateCoverage": 1,
+    "pathsWithCriticalGaps": 10,
+    "pathsWithZeroCoverage": 3,
+    "recommendation": "BLOCK cloud migration until compliance-critical paths reach 80%+ coverage",
+    "regulatoryRisk": "HIGH - OCC examination scheduled, current coverage insufficient for audit defense"
+  }
+}

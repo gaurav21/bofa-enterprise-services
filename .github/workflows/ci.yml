@@ -1,0 +1,89 @@
+name: BofA Enterprise Services CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-java:
+    name: Build Java Services
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - src/services/notification
+          - src/services/transaction-processing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'corretto'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+
+      - name: Build with Maven
+        working-directory: ${{ matrix.service }}
+        run: mvn clean compile -B
+
+      - name: Run tests
+        working-directory: ${{ matrix.service }}
+        run: mvn test -B
+        # NOTE: No coverage gate enforced — tests pass even with 15% coverage
+        # TODO: Add JaCoCo minimum coverage check before cloud migration
+
+  build-python:
+    name: Build Python Services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: src/services/audit-service
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        working-directory: src/services/audit-service
+        run: |
+          pip install flake8
+          flake8 src/ --max-line-length=120 --ignore=E501
+        continue-on-error: true
+        # NOTE: No pytest step — audit service has ZERO tests
+
+  terraform-validate:
+    name: Validate Terraform
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - infrastructure/terraform/aws/lambda
+          - infrastructure/terraform/aws/sqs
+          - infrastructure/terraform/aws/rds
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Init
+        working-directory: ${{ matrix.module }}
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: ${{ matrix.module }}
+        run: terraform validate
