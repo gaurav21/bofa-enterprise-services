@@ -1,0 +1,42 @@
+# AWS Lambda Notification Service Configuration
+# Replaces: Spring Boot application.yml with IBM MQ, Oracle, and LDAP settings
+#
+# All sensitive values are sourced from environment variables,
+# which are populated by AWS Lambda environment config + Secrets Manager.
+# No secrets are stored in this file.
+
+aws:
+  region: us-east-1
+  sqs:
+    fraud-alert-queue-url: ${SQS_FRAUD_ALERT_QUEUE_URL:}
+    txn-confirm-queue-url: ${SQS_TXN_CONFIRM_QUEUE_URL:}
+    balance-warning-queue-url: ${SQS_BALANCE_WARNING_QUEUE_URL:}
+  rds:
+    host: ${DB_HOST:localhost}
+    port: ${DB_PORT:5432}
+    name: ${DB_NAME:notifications}
+    user: ${DB_USER:notif_admin}
+    password-secret-arn: ${DB_PASSWORD_SECRET_ARN:}
+    ssl-mode: require
+  cognito:
+    user-pool-id: ${COGNITO_USER_POOL_ID:}
+    region: ${AWS_REGION:us-east-1}
+
+notification:
+  balance:
+    cooldown-hours: ${BALANCE_COOLDOWN_HOURS:4}
+  fraud:
+    max-delivery-sla-seconds: 30
+
+# Datadog monitoring (retained from legacy — no change)
+datadog:
+  api-key: ${DD_API_KEY:}
+  application-key: ${DD_APP_KEY:}
+  service: notification-lambda
+  env: ${DEPLOY_ENV:production}
+  tags:
+    team: notification-squad
+
+flyway:
+  locations: classpath:db/migration
+  baseline-on-migrate: true
