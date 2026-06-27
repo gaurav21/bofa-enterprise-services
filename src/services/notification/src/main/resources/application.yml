@@ -1,80 +1,96 @@
-server:
-  port: 8443
-  ssl:
-    enabled: true
-    key-store: classpath:keystore.p12
-    key-store-type: PKCS12
-
 spring:
   application:
     name: bofa-notification-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:aws}
+  main:
+    web-application-type: none
+
+---
+# AWS Lambda profile
+spring:
+  config:
+    activate:
+      on-profile: aws
   datasource:
-    url: jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=oracle-rac-prod-1.bofa.internal)(PORT=1521))(ADDRESS=(PROTOCOL=TCP)(HOST=oracle-rac-prod-2.bofa.internal)(PORT=1521)))(CONNECT_DATA=(SERVICE_NAME=NOTIF_SVC)(FAILOVER_MODE=(TYPE=SELECT)(METHOD=BASIC)(RETRIES=3)(DELAY=5))))
-    username: ${ORACLE_USER:notif_svc}
-    password: ${ORACLE_PASSWORD}
-    driver-class-name: oracle.jdbc.OracleDriver
+    url: ${DB_ENDPOINT:jdbc:postgresql://localhost:5432/notifications}
+    username: ${DB_USERNAME:notif_admin}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 30
-      minimum-idle: 10
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: 2
       connection-timeout: 10000
-      idle-timeout: 300000
+      idle-timeout: 120000
+      max-lifetime: 300000
+      keepalive-time: 60000
   jpa:
-    database-platform: org.hibernate.dialect.Oracle12cDialect
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
     show-sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
 
-ibm:
-  mq:
-    queue-manager: BOFA_PROD_QM01
-    channel: NOTIF.SVRCONN
-    conn-name: mqprod1.bofa.internal(1414),mqprod2.bofa.internal(1414)
-    user: ${MQ_USER:notif_svc}
-    password: ${MQ_PASSWORD}
-    queue:
-      notifications: BOFA.NOTIFICATIONS.QUEUE
-      dead-letter: BOFA.NOTIFICATIONS.DLQ
-      fraud-priority: BOFA.FRAUD.PRIORITY.QUEUE
+# AWS Configuration
+aws:
+  region: ${AWS_REGION:us-east-1}
+  secrets:
+    db-secret-arn: ${DB_SECRET_ARN:}
+  cognito:
+    user-pool-id: ${COGNITO_USER_POOL_ID:}
+    client-id: ${COGNITO_CLIENT_ID:}
+    region: ${AWS_REGION:us-east-1}
+  sqs:
+    fraud-alerts-queue-url: ${SQS_FRAUD_ALERTS_URL:}
+    txn-confirmations-queue-url: ${SQS_TXN_CONFIRMATIONS_URL:}
+    balance-warnings-queue-url: ${SQS_BALANCE_WARNINGS_URL:}
 
-ldap:
-  url: ldaps://ldap-prod.bofa.internal:636
-  base-dn: dc=bofa,dc=com
-  manager-dn: cn=notif-svc,ou=ServiceAccounts,dc=bofa,dc=com
-  manager-password: ${LDAP_PASSWORD}
-
+# Notification settings
 notification:
   balance:
-    cooldown-hours: 4
+    cooldown-hours: ${BALANCE_COOLDOWN_HOURS:4}
   fraud:
     max-delivery-sla-seconds: 30
-  channels:
-    sms:
-      enabled: true
-      provider: twilio
-    push:
-      enabled: true
-      apns-cert: ${APNS_CERT_PATH}
-    email:
-      enabled: true
-      smtp-host: smtp-relay.bofa.internal
 
+# Datadog metrics (retained from legacy)
 management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,prometheus
   metrics:
     export:
       datadog:
-        api-key: ${DD_API_KEY}
-        application-key: ${DD_APP_KEY}
-        enabled: true
+        api-key: ${DD_API_KEY:}
+        application-key: ${DD_APP_KEY:}
+        enabled: ${DD_ENABLED:false}
         step: 30s
     tags:
       service: notification-service
       env: ${DEPLOY_ENV:production}
       team: notification-squad
+      runtime: aws-lambda
 
 logging:
   level:
-    com.bofa.notifications: INFO
-    org.springframework.jms: WARN
-    com.ibm.mq: WARN
+    com.bofa.notifications: ${LOG_LEVEL:INFO}
+    org.springframework: WARN
+    org.flywaydb: INFO
+    software.amazon.awssdk: WARN
+
+---
+# Test profile (H2 in-memory)
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+  flyway:
+    enabled: false

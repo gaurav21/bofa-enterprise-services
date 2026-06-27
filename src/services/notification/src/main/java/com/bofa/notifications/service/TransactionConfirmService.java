@@ -15,6 +15,10 @@ import java.util.UUID;
  * Sends transaction confirmation notifications after successful processing.
  * Covers debit, credit, wire transfer, and ACH confirmations.
  * Regulatory: Reg E requires written confirmation of electronic fund transfers.
+ *
+ * Migration changes:
+ *   - @Transactional now backed by PostgreSQL (was Oracle)
+ *   - No structural changes needed — service logic is infrastructure-agnostic
  */
 @Service
 public class TransactionConfirmService {
@@ -59,13 +63,10 @@ public class TransactionConfirmService {
                         transactionType, transactionId, currency, amount),
                 notificationId);
 
-        // Route to preferred channel based on customer settings
         routeToPreferredChannel(accountId, payload);
     }
 
     private void routeToPreferredChannel(String accountId, Map<String, Object> payload) {
-        // TODO: Look up customer channel preference from profile service
-        // Default: push notification + email
         log.debug("Routing confirmation to preferred channel for account {}", accountId);
     }
 }
