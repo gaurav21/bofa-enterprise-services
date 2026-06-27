@@ -24,12 +24,14 @@ class NotificationCircuitBreakerTest {
     }
 
     @Test
-    void execute_returnsFallbackOnException() {
-        String result = circuitBreaker.execute("fraud-db",
-                () -> { throw new RuntimeException("DB down"); },
-                () -> "fallback-value");
+    void execute_callsFallbackAndRethrowsOnException() {
+        RuntimeException thrown = assertThrows(RuntimeException.class, () ->
+                circuitBreaker.execute("fraud-db",
+                        () -> { throw new RuntimeException("DB down"); },
+                        () -> "fallback-value"));
 
-        assertEquals("fallback-value", result);
+        assertTrue(thrown.getMessage().contains("fallback invoked"));
+        assertTrue(thrown.getCause().getMessage().contains("DB down"));
     }
 
     @Test
@@ -52,13 +54,15 @@ class NotificationCircuitBreakerTest {
     }
 
     @Test
-    void execute_runnable_callsFallbackOnException() {
+    void execute_runnable_callsFallbackAndRethrowsOnException() {
         boolean[] fallbackCalled = {false};
 
-        circuitBreaker.execute("txn-db",
-                () -> { throw new RuntimeException("fail"); },
-                () -> fallbackCalled[0] = true);
+        RuntimeException thrown = assertThrows(RuntimeException.class, () ->
+                circuitBreaker.execute("txn-db",
+                        () -> { throw new RuntimeException("fail"); },
+                        () -> fallbackCalled[0] = true));
 
         assertTrue(fallbackCalled[0]);
+        assertTrue(thrown.getMessage().contains("fallback invoked"));
     }
 }

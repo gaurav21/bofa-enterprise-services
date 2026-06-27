@@ -5,8 +5,11 @@ import com.bofa.notifications.lambda.persistence.PostgresNotificationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,6 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class BalanceWarningService {
 
     private static final Logger log = LoggerFactory.getLogger(BalanceWarningService.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final int cooldownHours;
     private final PostgresNotificationRepository notificationRepo;
@@ -59,18 +63,24 @@ public class BalanceWarningService {
 
         String notificationId = UUID.randomUUID().toString();
 
-        Map<String, Object> payload = Map.of(
-                "notificationId", notificationId,
-                "type", "BALANCE_WARNING",
-                "warningType", event.getWarningType(),
-                "accountId", event.getAccountId(),
-                "currentBalance", event.getCurrentBalance(),
-                "threshold", event.getThreshold(),
-                "timestamp", Instant.now().toString()
-        );
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("notificationId", notificationId);
+        payload.put("type", "BALANCE_WARNING");
+        payload.put("warningType", event.getWarningType());
+        payload.put("accountId", event.getAccountId());
+        payload.put("currentBalance", event.getCurrentBalance());
+        payload.put("threshold", event.getThreshold());
+        payload.put("timestamp", Instant.now().toString());
+
+        String payloadJson;
+        try {
+            payloadJson = MAPPER.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize balance warning payload", e);
+        }
 
         notificationRepo.saveNotification(notificationId, "BALANCE_WARNING",
-                event.getAccountId(), payload.toString(), "PENDING");
+                event.getAccountId(), payloadJson, "PENDING");
 
         lastNotificationTime.put(
                 event.getAccountId() + ":" + event.getWarningType(),

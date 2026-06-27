@@ -6,7 +6,10 @@ import com.bofa.notifications.lambda.persistence.PostgresNotificationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -23,6 +26,7 @@ import java.util.UUID;
 public class TransactionConfirmService {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionConfirmService.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final PostgresNotificationRepository notificationRepo;
     private final PostgresAuditLogRepository auditLogRepo;
@@ -41,20 +45,26 @@ public class TransactionConfirmService {
         String notificationId = UUID.randomUUID().toString();
         String currency = event.getCurrency() != null ? event.getCurrency() : "USD";
 
-        Map<String, Object> payload = Map.of(
-                "notificationId", notificationId,
-                "type", "TRANSACTION_CONFIRMATION",
-                "accountId", event.getAccountId(),
-                "transactionId", event.getTransactionId(),
-                "transactionType", event.getTransactionType(),
-                "amount", event.getAmount(),
-                "currency", currency,
-                "description", event.getDescription() != null ? event.getDescription() : "",
-                "confirmedAt", Instant.now().toString()
-        );
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("notificationId", notificationId);
+        payload.put("type", "TRANSACTION_CONFIRMATION");
+        payload.put("accountId", event.getAccountId());
+        payload.put("transactionId", event.getTransactionId());
+        payload.put("transactionType", event.getTransactionType());
+        payload.put("amount", event.getAmount());
+        payload.put("currency", currency);
+        payload.put("description", event.getDescription() != null ? event.getDescription() : "");
+        payload.put("confirmedAt", Instant.now().toString());
+
+        String payloadJson;
+        try {
+            payloadJson = MAPPER.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize transaction confirmation payload", e);
+        }
 
         notificationRepo.saveNotification(notificationId, "TRANSACTION_CONFIRM",
-                event.getAccountId(), payload.toString(), "DELIVERED");
+                event.getAccountId(), payloadJson, "DELIVERED");
 
         auditLogRepo.logEvent("TXN_CONFIRM_SENT", event.getAccountId(),
                 String.format("Confirmation sent for %s transaction %s: %s %.2f",

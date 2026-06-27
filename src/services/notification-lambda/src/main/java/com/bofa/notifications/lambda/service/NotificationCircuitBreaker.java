@@ -56,7 +56,8 @@ public class NotificationCircuitBreaker {
         } catch (Exception e) {
             log.warn("Circuit breaker '{}' triggered fallback: state={}, error={}",
                     name, cb.getState(), e.getMessage());
-            return fallback.get();
+            fallback.get();
+            throw new RuntimeException("Circuit breaker '" + name + "' fallback invoked — re-throwing for SQS retry", e);
         }
     }
 
@@ -68,6 +69,7 @@ public class NotificationCircuitBreaker {
             log.warn("Circuit breaker '{}' triggered fallback: state={}, error={}",
                     name, cb.getState(), e.getMessage());
             fallback.run();
+            throw new RuntimeException("Circuit breaker '" + name + "' fallback invoked — re-throwing for SQS retry", e);
         }
     }
 

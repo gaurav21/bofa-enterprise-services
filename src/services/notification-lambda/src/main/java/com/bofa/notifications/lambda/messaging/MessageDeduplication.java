@@ -58,7 +58,7 @@ public class MessageDeduplication {
             return rows > 0;
         } catch (SQLException e) {
             log.error("Deduplication check failed for message: {}", messageId, e);
-            return false;
+            throw new RuntimeException("Deduplication check failed — must retry message", e);
         }
     }
 

@@ -11,6 +11,8 @@ terraform {
   }
 }
 
+data "aws_region" "current" {}
+
 variable "environment" {
   default = "staging"
 }
@@ -103,7 +105,11 @@ resource "aws_iam_role_policy" "notification_lambda_policy" {
           "sqs:GetQueueAttributes",
           "sqs:SendMessage"
         ]
-        Resource = "arn:aws:sqs:*:*:bofa-*"
+        Resource = [
+          var.sqs_fraud_alert_queue_url != "" ? "arn:aws:sqs:us-east-1:*:bofa-fraud-alerts-*" : "",
+          var.sqs_txn_confirm_queue_url != "" ? "arn:aws:sqs:us-east-1:*:bofa-txn-confirmations-*" : "",
+          var.sqs_balance_warning_queue_url != "" ? "arn:aws:sqs:us-east-1:*:bofa-balance-warnings-*" : ""
+        ]
       },
       {
         Effect = "Allow"
@@ -120,7 +126,7 @@ resource "aws_iam_role_policy" "notification_lambda_policy" {
         Resource = "*"
         Condition = {
           StringEquals = {
-            "kms:ViaService" = "secretsmanager.us-east-1.amazonaws.com"
+            "kms:ViaService" = "secretsmanager.${data.aws_region.current.name}.amazonaws.com"
           }
         }
       },

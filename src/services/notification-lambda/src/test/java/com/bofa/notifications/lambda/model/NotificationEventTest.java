@@ -46,7 +46,7 @@ class NotificationEventTest {
         event.setSequenceNumber(42);
 
         String dedupId = event.toDeduplicationId();
-        assertTrue(dedupId.startsWith("TRANSACTION_CONFIRM-ACC-456-42-"));
+        assertEquals("TRANSACTION_CONFIRM-ACC-456-42", dedupId);
     }
 
     @Test

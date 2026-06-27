@@ -41,6 +41,7 @@ public class CognitoAuthConfig {
     private final String userPoolId;
     private final String region;
     private final String jwksUrl;
+    private static final int MAX_CACHE_SIZE = 1000;
     private final Map<String, CachedToken> tokenCache = new ConcurrentHashMap<>();
 
     public CognitoAuthConfig() {
@@ -70,6 +71,12 @@ public class CognitoAuthConfig {
         try {
             Set<String> scopes = verifyAndExtractScopes(token);
             if (!scopes.isEmpty()) {
+                if (tokenCache.size() >= MAX_CACHE_SIZE) {
+                    tokenCache.entrySet().removeIf(e -> e.getValue().expiresAt.isBefore(Instant.now()));
+                    if (tokenCache.size() >= MAX_CACHE_SIZE) {
+                        tokenCache.clear();
+                    }
+                }
                 tokenCache.put(token, new CachedToken(scopes,
                         Instant.now().plusSeconds(300)));
             }

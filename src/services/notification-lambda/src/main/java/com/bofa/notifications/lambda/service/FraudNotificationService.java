@@ -9,8 +9,11 @@ import io.github.resilience4j.retry.RetryConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -29,6 +32,7 @@ import java.util.UUID;
 public class FraudNotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(FraudNotificationService.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final int MAX_DELIVERY_SLA_SECONDS = 30;
 
     private final PostgresNotificationRepository notificationRepo;
@@ -62,19 +66,25 @@ public class FraudNotificationService {
 
         String notificationId = UUID.randomUUID().toString();
 
-        Map<String, Object> payload = Map.of(
-                "notificationId", notificationId,
-                "type", "FRAUD_ALERT",
-                "accountId", event.getAccountId(),
-                "transactionId", event.getTransactionId(),
-                "amount", event.getAmount(),
-                "merchantName", event.getMerchantName(),
-                "severity", event.getSeverity(),
-                "detectedAt", startTime.toString()
-        );
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("notificationId", notificationId);
+        payload.put("type", "FRAUD_ALERT");
+        payload.put("accountId", event.getAccountId());
+        payload.put("transactionId", event.getTransactionId());
+        payload.put("amount", event.getAmount());
+        payload.put("merchantName", event.getMerchantName());
+        payload.put("severity", event.getSeverity());
+        payload.put("detectedAt", startTime.toString());
+
+        String payloadJson;
+        try {
+            payloadJson = MAPPER.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize fraud alert payload", e);
+        }
 
         notificationRepo.saveNotification(notificationId, "FRAUD_ALERT",
-                event.getAccountId(), payload.toString(), "PENDING");
+                event.getAccountId(), payloadJson, "PENDING");
 
         auditLogRepo.logEvent("FRAUD_ALERT_SENT", event.getAccountId(),
                 "Fraud alert dispatched for transaction " + event.getTransactionId(),

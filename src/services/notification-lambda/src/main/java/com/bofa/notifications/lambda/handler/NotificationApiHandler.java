@@ -137,7 +137,7 @@ public class NotificationApiHandler
 
             String accountId = params.get("accountId");
             int limit = params.containsKey("limit")
-                    ? Integer.parseInt(params.get("limit")) : 50;
+                    ? Math.min(Math.max(Integer.parseInt(params.get("limit")), 1), 500) : 50;
 
             List<Map<String, Object>> results = notificationRepo.findByAccountId(accountId, limit);
             return jsonResponse(200, Map.of("notifications", results, "count", results.size()));

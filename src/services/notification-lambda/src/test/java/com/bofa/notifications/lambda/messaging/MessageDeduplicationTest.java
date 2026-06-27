@@ -56,12 +56,14 @@ class MessageDeduplicationTest {
     }
 
     @Test
-    void tryClaimMessage_sqlExceptionReturnsFalse() throws SQLException {
+    void tryClaimMessage_sqlExceptionThrowsRuntimeException() throws SQLException {
         when(connection.prepareStatement(anyString())).thenThrow(new SQLException("DB error"));
 
-        boolean result = deduplication.tryClaimMessage("msg-err", "FRAUD_ALERT", "ACC-123");
+        RuntimeException thrown = assertThrows(RuntimeException.class, () ->
+                deduplication.tryClaimMessage("msg-err", "FRAUD_ALERT", "ACC-123"));
 
-        assertFalse(result);
+        assertTrue(thrown.getMessage().contains("Deduplication check failed"));
+        assertTrue(thrown.getCause() instanceof SQLException);
     }
 
     @Test

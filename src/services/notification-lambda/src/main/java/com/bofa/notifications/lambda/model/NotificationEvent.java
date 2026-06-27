@@ -3,8 +3,6 @@ package com.bofa.notifications.lambda.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.time.Instant;
-
 /**
  * Canonical notification event model.
  * Compatible with both legacy IBM MQ JSON format and new SQS FIFO messages.
@@ -131,6 +129,6 @@ public class NotificationEvent {
         if ("FRAUD_ALERT".equals(eventType) && transactionId != null) {
             return eventType + "-" + transactionId + "-" + accountId;
         }
-        return eventType + "-" + accountId + "-" + sequenceNumber + "-" + Instant.now().toEpochMilli();
+        return eventType + "-" + accountId + "-" + sequenceNumber;
     }
 }
