@@ -1,0 +1,327 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  BofA Notification Service - AWS Lambda Migration
+  Replaces: Spring Boot 2.7 + IBM MQ + Oracle DB + LDAP
+  With:     AWS Lambda + SQS FIFO + RDS PostgreSQL + Cognito
+
+Globals:
+  Function:
+    Runtime: java11
+    MemorySize: 512
+    Timeout: 60
+    Tracing: Active
+    Environment:
+      Variables:
+        DEPLOY_ENV: !Ref Environment
+        DB_HOST: !Ref DatabaseHost
+        DB_PORT: !Ref DatabasePort
+        DB_NAME: !Ref DatabaseName
+        DB_USER: !Ref DatabaseUser
+        DB_PASSWORD_SECRET_ARN: !Ref DatabasePasswordSecretArn
+        COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+        DD_API_KEY: !Ref DatadogApiKey
+        DD_APP_KEY: !Ref DatadogAppKey
+    VpcConfig:
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds: !Ref SecurityGroupIds
+    Tags:
+      Service: notification
+      Team: notification-squad
+      Compliance: sox-404
+
+Parameters:
+  Environment:
+    Type: String
+    Default: staging
+    AllowedValues: [staging, production]
+  DatabaseHost:
+    Type: String
+  DatabasePort:
+    Type: String
+    Default: "5432"
+  DatabaseName:
+    Type: String
+    Default: notifications
+  DatabaseUser:
+    Type: String
+    Default: notif_admin
+  DatabasePasswordSecretArn:
+    Type: String
+  CognitoUserPoolId:
+    Type: String
+  DatadogApiKey:
+    Type: String
+    NoEcho: true
+  DatadogAppKey:
+    Type: String
+    NoEcho: true
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  FraudAlertQueueArn:
+    Type: String
+  TxnConfirmQueueArn:
+    Type: String
+  BalanceWarningQueueArn:
+    Type: String
+  FraudAlertQueueUrl:
+    Type: String
+  TxnConfirmQueueUrl:
+    Type: String
+  BalanceWarningQueueUrl:
+    Type: String
+
+Resources:
+
+  # ============================================================
+  # FRAUD ALERT PROCESSOR - HIGHEST PRIORITY
+  # SLA: 30-second delivery guarantee
+  # Provisioned concurrency: 100 (eliminates cold start)
+  # ============================================================
+  FraudAlertFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "bofa-fraud-alert-processor-${Environment}"
+      Handler: com.bofa.notifications.lambda.handler.FraudAlertHandler::handleRequest
+      MemorySize: 1024
+      Timeout: 30
+      SnapStart:
+        ApplyOn: PublishedVersions
+      AutoPublishAlias: live
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrentExecutions: 100
+      ReservedConcurrentExecutions: 200
+      Environment:
+        Variables:
+          SQS_FRAUD_ALERT_QUEUE_URL: !Ref FraudAlertQueueUrl
+          SQS_TXN_CONFIRM_QUEUE_URL: !Ref TxnConfirmQueueUrl
+          SQS_BALANCE_WARNING_QUEUE_URL: !Ref BalanceWarningQueueUrl
+      Events:
+        FraudAlertQueue:
+          Type: SQS
+          Properties:
+            Queue: !Ref FraudAlertQueueArn
+            BatchSize: 1
+            Enabled: true
+            ScalingConfig:
+              MaximumConcurrency: 50
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !Sub "bofa-fraud-alerts-${Environment}.fifo"
+        - VPCAccessPolicy: {}
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabasePasswordSecretArn
+            - Effect: Allow
+              Action:
+                - kms:Decrypt
+              Resource: "*"
+              Condition:
+                StringEquals:
+                  kms:ViaService: !Sub "secretsmanager.${AWS::Region}.amazonaws.com"
+
+  # ============================================================
+  # TRANSACTION CONFIRMATION PROCESSOR
+  # ============================================================
+  TransactionConfirmFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "bofa-txn-confirm-processor-${Environment}"
+      Handler: com.bofa.notifications.lambda.handler.TransactionConfirmHandler::handleRequest
+      MemorySize: 512
+      Timeout: 60
+      SnapStart:
+        ApplyOn: PublishedVersions
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          SQS_FRAUD_ALERT_QUEUE_URL: !Ref FraudAlertQueueUrl
+          SQS_TXN_CONFIRM_QUEUE_URL: !Ref TxnConfirmQueueUrl
+          SQS_BALANCE_WARNING_QUEUE_URL: !Ref BalanceWarningQueueUrl
+      Events:
+        TxnConfirmQueue:
+          Type: SQS
+          Properties:
+            Queue: !Ref TxnConfirmQueueArn
+            BatchSize: 5
+            Enabled: true
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !Sub "bofa-txn-confirmations-${Environment}.fifo"
+        - VPCAccessPolicy: {}
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabasePasswordSecretArn
+
+  # ============================================================
+  # BALANCE WARNING PROCESSOR
+  # ============================================================
+  BalanceWarningFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "bofa-balance-warning-processor-${Environment}"
+      Handler: com.bofa.notifications.lambda.handler.BalanceWarningHandler::handleRequest
+      MemorySize: 256
+      Timeout: 30
+      SnapStart:
+        ApplyOn: PublishedVersions
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          BALANCE_COOLDOWN_HOURS: "4"
+          SQS_FRAUD_ALERT_QUEUE_URL: !Ref FraudAlertQueueUrl
+          SQS_TXN_CONFIRM_QUEUE_URL: !Ref TxnConfirmQueueUrl
+          SQS_BALANCE_WARNING_QUEUE_URL: !Ref BalanceWarningQueueUrl
+      Events:
+        BalanceWarningQueue:
+          Type: SQS
+          Properties:
+            Queue: !Ref BalanceWarningQueueArn
+            BatchSize: 10
+            Enabled: true
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !Sub "bofa-balance-warnings-${Environment}.fifo"
+        - VPCAccessPolicy: {}
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabasePasswordSecretArn
+
+  # ============================================================
+  # API HANDLER (REST endpoints via API Gateway)
+  # ============================================================
+  NotificationApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "bofa-notification-api-${Environment}"
+      Handler: com.bofa.notifications.lambda.handler.NotificationApiHandler::handleRequest
+      MemorySize: 512
+      Timeout: 30
+      SnapStart:
+        ApplyOn: PublishedVersions
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          SQS_FRAUD_ALERT_QUEUE_URL: !Ref FraudAlertQueueUrl
+          SQS_TXN_CONFIRM_QUEUE_URL: !Ref TxnConfirmQueueUrl
+          SQS_BALANCE_WARNING_QUEUE_URL: !Ref BalanceWarningQueueUrl
+      Events:
+        HealthCheck:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: GET
+            RestApiId: !Ref NotificationApi
+        SubmitNotification:
+          Type: Api
+          Properties:
+            Path: /api/notifications
+            Method: POST
+            RestApiId: !Ref NotificationApi
+            Auth:
+              Authorizer: CognitoAuth
+        QueryNotifications:
+          Type: Api
+          Properties:
+            Path: /api/notifications
+            Method: GET
+            RestApiId: !Ref NotificationApi
+            Auth:
+              Authorizer: CognitoAuth
+        QueryAuditTrail:
+          Type: Api
+          Properties:
+            Path: /api/audit/{accountId}
+            Method: GET
+            RestApiId: !Ref NotificationApi
+            Auth:
+              Authorizer: CognitoAuth
+      Policies:
+        - SQSSendMessagePolicy:
+            QueueName: !Sub "bofa-fraud-alerts-${Environment}.fifo"
+        - SQSSendMessagePolicy:
+            QueueName: !Sub "bofa-txn-confirmations-${Environment}.fifo"
+        - SQSSendMessagePolicy:
+            QueueName: !Sub "bofa-balance-warnings-${Environment}.fifo"
+        - VPCAccessPolicy: {}
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabasePasswordSecretArn
+
+  # ============================================================
+  # API GATEWAY with Cognito Authorizer
+  # Replaces Spring Security + LDAP
+  # ============================================================
+  NotificationApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "bofa-notification-api-${Environment}"
+      StageName: !Ref Environment
+      TracingEnabled: true
+      Auth:
+        DefaultAuthorizer: CognitoAuth
+        Authorizers:
+          CognitoAuth:
+            UserPoolArn: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}"
+            AuthorizationScopes:
+              - notification-service/write
+
+  # ============================================================
+  # CLOUDWATCH ALARMS for SLA monitoring
+  # ============================================================
+  FraudAlertSlaAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "bofa-fraud-alert-sla-breach-${Environment}"
+      AlarmDescription: "Fraud alert processing exceeds 30-second SLA"
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref FraudAlertFunction
+      Statistic: p99
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 30000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  FraudAlertErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "bofa-fraud-alert-errors-${Environment}"
+      AlarmDescription: "Fraud alert processing errors detected"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref FraudAlertFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+
+Outputs:
+  FraudAlertFunctionArn:
+    Description: Fraud Alert Lambda ARN
+    Value: !GetAtt FraudAlertFunction.Arn
+  TransactionConfirmFunctionArn:
+    Description: Transaction Confirm Lambda ARN
+    Value: !GetAtt TransactionConfirmFunction.Arn
+  BalanceWarningFunctionArn:
+    Description: Balance Warning Lambda ARN
+    Value: !GetAtt BalanceWarningFunction.Arn
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${NotificationApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
