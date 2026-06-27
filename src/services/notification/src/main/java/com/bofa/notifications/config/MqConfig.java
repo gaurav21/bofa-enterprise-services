@@ -1,65 +1,27 @@
 package com.bofa.notifications.config;
 
-import com.ibm.mq.jms.MQConnectionFactory;
-import com.ibm.msg.client.wmq.WMQConstants;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.jms.config.DefaultJmsListenerContainerFactory;
-import org.springframework.jms.connection.CachingConnectionFactory;
-
-import javax.jms.ConnectionFactory;
-import javax.jms.JMSException;
-
 /**
- * IBM MQ connection configuration for notification message consumption.
- * Connects to the enterprise MQ cluster for fraud, transaction, and balance events.
+ * DEPRECATED: IBM MQ configuration has been replaced by SQS FIFO.
+ *
+ * Migration mapping:
+ *   - BOFA.NOTIFICATIONS.QUEUE    -> bofa-fraud-alerts-{env}.fifo
+ *                                     bofa-txn-confirmations-{env}.fifo
+ *                                     bofa-balance-warnings-{env}.fifo
+ *   - BOFA.NOTIFICATIONS.DLQ     -> bofa-fraud-alerts-dlq-{env}.fifo
+ *   - BOFA.FRAUD.PRIORITY.QUEUE  -> bofa-fraud-alerts-{env}.fifo (provisioned concurrency)
+ *
+ * IBM MQ connection factory, JMS listener container factory,
+ * and all MQ-specific configuration have been removed.
+ *
+ * See:
+ *   - config/aws/SqsConfig.java for SQS client configuration
+ *   - queue/sqs/SqsMessageProcessor.java for message processing
+ *   - lambda/*Handler.java for SQS-triggered Lambda entry points
+ *
+ * @deprecated Replaced by SQS FIFO configuration in config/aws/SqsConfig.java
  */
-@Configuration
+@Deprecated(since = "4.0.0", forRemoval = true)
 public class MqConfig {
-
-    @Value("${ibm.mq.queue-manager}")
-    private String queueManager;
-
-    @Value("${ibm.mq.channel}")
-    private String channel;
-
-    @Value("${ibm.mq.conn-name}")
-    private String connName;
-
-    @Value("${ibm.mq.user}")
-    private String mqUser;
-
-    @Value("${ibm.mq.password}")
-    private String mqPassword;
-
-    @Bean
-    public ConnectionFactory mqConnectionFactory() throws JMSException {
-        MQConnectionFactory factory = new MQConnectionFactory();
-        factory.setQueueManager(queueManager);
-        factory.setChannel(channel);
-        factory.setConnectionNameList(connName);
-        factory.setTransportType(WMQConstants.WMQ_CM_CLIENT);
-        factory.setStringProperty(WMQConstants.USERID, mqUser);
-        factory.setStringProperty(WMQConstants.PASSWORD, mqPassword);
-
-        CachingConnectionFactory cachingFactory = new CachingConnectionFactory(factory);
-        cachingFactory.setSessionCacheSize(20);
-        cachingFactory.setReconnectOnException(true);
-        return cachingFactory;
-    }
-
-    @Bean
-    public DefaultJmsListenerContainerFactory jmsListenerContainerFactory(
-            ConnectionFactory mqConnectionFactory) {
-        DefaultJmsListenerContainerFactory factory = new DefaultJmsListenerContainerFactory();
-        factory.setConnectionFactory(mqConnectionFactory);
-        factory.setConcurrency("5-20");
-        factory.setSessionTransacted(true);
-        factory.setErrorHandler(t -> {
-            // TODO: Route to dead-letter queue and alert PagerDuty
-            System.err.println("MQ listener error: " + t.getMessage());
-        });
-        return factory;
-    }
+    // Intentionally empty — IBM MQ dependencies removed from pom.xml
+    // This class is retained as migration documentation
 }

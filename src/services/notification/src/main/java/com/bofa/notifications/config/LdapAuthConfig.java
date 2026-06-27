@@ -1,71 +1,28 @@
 package com.bofa.notifications.config;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.ldap.core.LdapTemplate;
-import org.springframework.ldap.core.support.LdapContextSource;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
-
 /**
- * LDAP authentication against BofA Active Directory.
- * Service accounts authenticate via LDAP bind for inter-service calls.
- * User access controlled by AD group membership (CN=NotificationAdmins).
+ * DEPRECATED: LDAP/Active Directory authentication has been replaced by AWS Cognito.
+ *
+ * RBAC migration mapping:
+ *   AD Group                     -> Cognito Scope
+ *   CN=NotificationAdmins        -> notification-service/admin
+ *   CN=NotificationService       -> notification-service/write
+ *   CN=AuditReaders              -> audit-service/read
+ *   CN=ComplianceOfficers        -> audit-service/admin
+ *
+ * Auth flow migration:
+ *   - LDAP bind (service accounts) -> OAuth2 client credentials flow
+ *   - AD group membership          -> Cognito JWT scopes
+ *   - WebSecurityConfigurerAdapter -> Cognito JWT validation (CognitoAuthConfig)
+ *   - httpBasic()                  -> Bearer token (API Gateway + Cognito)
+ *
+ * See:
+ *   - config/aws/CognitoAuthConfig.java for JWT validation
+ *
+ * @deprecated Replaced by Cognito auth in config/aws/CognitoAuthConfig.java
  */
-@Configuration
-@EnableWebSecurity
-public class LdapAuthConfig extends WebSecurityConfigurerAdapter {
-
-    @Value("${ldap.url}")
-    private String ldapUrl;
-
-    @Value("${ldap.base-dn}")
-    private String baseDn;
-
-    @Value("${ldap.manager-dn}")
-    private String managerDn;
-
-    @Value("${ldap.manager-password}")
-    private String managerPassword;
-
-    @Override
-    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-        auth.ldapAuthentication()
-            .userDnPatterns("uid={0},ou=ServiceAccounts")
-            .groupSearchBase("ou=Groups")
-            .contextSource()
-                .url(ldapUrl + "/" + baseDn)
-                .managerDn(managerDn)
-                .managerPassword(managerPassword);
-    }
-
-    @Override
-    protected void configure(HttpSecurity http) throws Exception {
-        http.csrf().disable()
-            .authorizeRequests()
-                .antMatchers("/actuator/health").permitAll()
-                .antMatchers("/api/notifications/**").hasRole("NOTIFICATION_SERVICE")
-                .antMatchers("/api/admin/**").hasRole("NOTIFICATION_ADMIN")
-                .anyRequest().authenticated()
-            .and()
-            .httpBasic();
-    }
-
-    @Bean
-    public LdapContextSource contextSource() {
-        LdapContextSource ctx = new LdapContextSource();
-        ctx.setUrl(ldapUrl);
-        ctx.setBase(baseDn);
-        ctx.setUserDn(managerDn);
-        ctx.setPassword(managerPassword);
-        return ctx;
-    }
-
-    @Bean
-    public LdapTemplate ldapTemplate() {
-        return new LdapTemplate(contextSource());
-    }
+@Deprecated(since = "4.0.0", forRemoval = true)
+public class LdapAuthConfig {
+    // Intentionally empty — Spring LDAP and WebSecurityConfigurerAdapter removed
+    // This class is retained as migration documentation
 }

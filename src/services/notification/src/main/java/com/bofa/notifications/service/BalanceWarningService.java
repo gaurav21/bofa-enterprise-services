@@ -17,6 +17,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * Balance warning notifications for low balance and overdraft events.
  * Implements rate limiting to avoid notification fatigue.
  * Regulatory: Reg DD requires disclosure of overdraft fees before they occur.
+ *
+ * Migration changes:
+ *   - @Transactional now backed by PostgreSQL (was Oracle)
+ *   - Rate-limiting ConcurrentHashMap is per-Lambda-instance; acceptable
+ *     since SQS FIFO routes same MessageGroupId to same consumer
  */
 @Service
 public class BalanceWarningService {
@@ -36,7 +41,6 @@ public class BalanceWarningService {
     @Transactional
     public boolean sendBalanceWarning(String accountId, double currentBalance,
                                        double threshold, String warningType) {
-        // Rate limit: don't spam customers with repeated low balance alerts
         if (isInCooldown(accountId, warningType)) {
             log.debug("Skipping balance warning for account {} - in cooldown period", accountId);
             return false;

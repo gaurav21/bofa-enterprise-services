@@ -1,49 +1,24 @@
 package com.bofa.notifications.config;
 
-import oracle.jdbc.pool.OracleDataSource;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
-import org.springframework.transaction.annotation.EnableTransactionManagement;
-
-import javax.sql.DataSource;
-import java.sql.SQLException;
-
 /**
- * Oracle 19c RAC datasource configuration.
- * Uses connection pooling with failover for high availability.
+ * DEPRECATED: Oracle 19c RAC configuration has been replaced by RDS PostgreSQL.
+ *
+ * Migration mapping:
+ *   - OracleDataSource                 -> HikariCP via RDS Proxy
+ *   - Oracle RAC failover              -> RDS Multi-AZ automatic failover
+ *   - Oracle JDBC ReadTimeout          -> HikariCP connection-timeout
+ *   - oracle.jdbc.fanEnabled           -> RDS event notifications
+ *   - Oracle 12c Dialect               -> PostgreSQL Dialect
+ *   - FETCH FIRST N ROWS ONLY          -> LIMIT N
+ *
+ * See:
+ *   - config/aws/PostgresConfig.java for RDS PostgreSQL configuration
+ *   - db/migration/V1__create_notification_schema.sql for Flyway schema
+ *
+ * @deprecated Replaced by PostgreSQL configuration in config/aws/PostgresConfig.java
  */
-@Configuration
-@EnableJpaRepositories(basePackages = "com.bofa.notifications.persistence")
-@EnableTransactionManagement
+@Deprecated(since = "4.0.0", forRemoval = true)
 public class OracleConfig {
-
-    @Value("${spring.datasource.url}")
-    private String jdbcUrl;
-
-    @Value("${spring.datasource.username}")
-    private String username;
-
-    @Value("${spring.datasource.password}")
-    private String password;
-
-    @Bean
-    public DataSource dataSource() throws SQLException {
-        OracleDataSource ds = new OracleDataSource();
-        ds.setURL(jdbcUrl);
-        ds.setUser(username);
-        ds.setPassword(password);
-        ds.setImplicitCachingEnabled(true);
-        ds.setFastConnectionFailoverEnabled(true);
-
-        // Connection pool settings for high-throughput notification processing
-        java.util.Properties props = new java.util.Properties();
-        props.setProperty("oracle.jdbc.ReadTimeout", "30000");
-        props.setProperty("oracle.net.CONNECT_TIMEOUT", "10000");
-        props.setProperty("oracle.jdbc.fanEnabled", "true");
-        ds.setConnectionProperties(props);
-
-        return ds;
-    }
+    // Intentionally empty — Oracle JDBC dependencies removed from pom.xml
+    // This class is retained as migration documentation
 }

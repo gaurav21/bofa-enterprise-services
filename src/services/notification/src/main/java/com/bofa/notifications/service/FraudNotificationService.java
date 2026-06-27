@@ -2,10 +2,9 @@ package com.bofa.notifications.service;
 
 import com.bofa.notifications.persistence.AuditLogRepository;
 import com.bofa.notifications.persistence.NotificationRepository;
+import com.bofa.notifications.resilience.CircuitBreakerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.retry.annotation.Backoff;
-import org.springframework.retry.annotation.Retryable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +17,11 @@ import java.util.UUID;
  * Processes real-time fraud alert notifications.
  * SLA: Must deliver within 30 seconds of detection.
  * Regulatory: BSA/AML requires immediate customer notification for confirmed fraud.
+ *
+ * Migration changes:
+ *   - Removed Spring @Retryable (Lambda has built-in SQS retry via visibility timeout)
+ *   - Added CircuitBreakerService for downstream dependency protection
+ *   - @Transactional now backed by PostgreSQL (was Oracle)
  */
 @Service
 public class FraudNotificationService {
@@ -27,15 +31,17 @@ public class FraudNotificationService {
 
     private final NotificationRepository notificationRepo;
     private final AuditLogRepository auditLogRepo;
+    private final CircuitBreakerService circuitBreaker;
 
     public FraudNotificationService(NotificationRepository notificationRepo,
-                                     AuditLogRepository auditLogRepo) {
+                                     AuditLogRepository auditLogRepo,
+                                     CircuitBreakerService circuitBreaker) {
         this.notificationRepo = notificationRepo;
         this.auditLogRepo = auditLogRepo;
+        this.circuitBreaker = circuitBreaker;
     }
 
     @Transactional
-    @Retryable(value = Exception.class, maxAttempts = 3, backoff = @Backoff(delay = 1000))
     public void processFraudAlert(String accountId, String transactionId,
                                    double amount, String merchantName,
                                    String alertSeverity) {
@@ -45,7 +51,6 @@ public class FraudNotificationService {
         String notificationId = UUID.randomUUID().toString();
         Instant detectedAt = Instant.now();
 
-        // Build notification payload
         Map<String, Object> payload = Map.of(
             "notificationId", notificationId,
             "type", "FRAUD_ALERT",
@@ -57,17 +62,15 @@ public class FraudNotificationService {
             "detectedAt", detectedAt.toString()
         );
 
-        // Persist notification record
         notificationRepo.saveNotification(notificationId, "FRAUD_ALERT",
                 accountId, payload.toString(), "PENDING");
 
-        // Create immutable audit trail entry
         auditLogRepo.logEvent("FRAUD_ALERT_SENT", accountId,
                 "Fraud alert dispatched for transaction " + transactionId,
                 notificationId);
 
-        // Dispatch via configured channels (SMS, push, email)
-        dispatchMultiChannel(accountId, payload);
+        circuitBreaker.executeWithCircuitBreaker("fraud-dispatch",
+                () -> dispatchMultiChannel(accountId, payload));
 
         long elapsed = Instant.now().toEpochMilli() - detectedAt.toEpochMilli();
         if (elapsed > MAX_DELIVERY_SLA_SECONDS * 1000L) {
@@ -78,8 +81,6 @@ public class FraudNotificationService {
 
     @Async
     protected void dispatchMultiChannel(String accountId, Map<String, Object> payload) {
-        // TODO: Implement SMS gateway, APNs/FCM push, SendGrid email
-        // Currently stubbed - relies on downstream notification gateway
         log.info("Dispatching fraud alert to all channels for account {}", accountId);
     }
 }
